@@ -14,9 +14,12 @@ import * as context from "../core/context";
 
 import * as WebSocket from "ws";
 
-import FlvSession from "../sessions/flvSession";
+import FlvSession, {ProtocolsEnum} from "../sessions/flvSession";
 import Logger from "../core/logger";
 import IConfig from "../config";
+
+import { authCheck } from '../api/middleware/auth';
+import streamsRoute from '../api/routes/streams';
 
 import * as bodyParser from "body-parser";
 
@@ -46,17 +49,19 @@ export default class HttpServer {
 
         app.all('*', (req, res, next) => {
             res.header("Access-Control-Allow-Origin", config.http.allow_origin + "");
-            res.header("Access-Control-Allow-Headers", "Content-Type,Content-Length, Authorization, Accept,X-Requested-With");
+            res.header("Access-Control-Allow-Headers", "Content-Type,Content-Length, Authorization, Accept,X-Requested-With, Range");
             res.header("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS");
             res.header("Access-Control-Allow-Credentials", "true");
             req.method === "OPTIONS" ? res.sendStatus(200) : next();
         });
 
         app.get('*.flv', (req, res, next) => {
-            // @ts-ignore
-            req.nmsConnectionType = 'http'; // TODO: Remove this shit
-            this.onConnect(req, res);
+            this.onConnect(req, res, ProtocolsEnum.HTTP);
         });
+
+        app.use(authCheck);
+
+        app.use('/api/streams', streamsRoute(context));
 
         app.use(express.static(path.join(__dirname + '/public')));
         app.use(express.static(this.mediaRoot));
@@ -95,9 +100,7 @@ export default class HttpServer {
         this.wsServer = new WebSocket.Server({server: this.httpServer});
 
         this.wsServer.on('connection', (ws, req) => {
-            // @ts-ignore
-            req.nmsConnectionType = 'ws'; // FIXME: Ещё один костыль
-            this.onConnect(req, ws);
+            this.onConnect(req, ws, ProtocolsEnum.WS);
         });
 
         this.wsServer.on('listening', () => {
@@ -123,9 +126,7 @@ export default class HttpServer {
             this.wsServer = new WebSocket.Server({server: this.httpsServer});
 
             this.wsServer.on('connection', (ws, req) => {
-                // @ts-ignore
-                req.nmsConnectionType = 'ws'; // FIXME: Костыль
-                this.onConnect(req, ws);
+                this.onConnect(req, ws, ProtocolsEnum.WS);
             });
 
             this.wsServer.on('listening', () => {
@@ -165,8 +166,13 @@ export default class HttpServer {
         });
     }
 
-    onConnect(req, res) {
-        let session = new FlvSession(req, res);
+
+    onConnect(
+        req: any,
+        res: any,
+        protocol: ProtocolsEnum,
+      ) {
+        let session = new FlvSession(req, res, protocol);
         session.run();
     }
 }
