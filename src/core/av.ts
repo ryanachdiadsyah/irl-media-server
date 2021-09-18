@@ -491,7 +491,7 @@ function getAVCProfileName(info) {
     }
 }
 
-module.exports = {
+export {
     AUDIO_SOUND_RATE,
     AUDIO_CODEC_NAME,
     VIDEO_CODEC_NAME,
