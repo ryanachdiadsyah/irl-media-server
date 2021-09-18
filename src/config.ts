@@ -9,6 +9,10 @@ export enum LogType {
 }
 
 export default interface IConfig {
+    auth: {
+        publish: boolean;
+        play: boolean;
+    }
     logType: LogType,
     cluster: boolean,
     paths: {
@@ -39,6 +43,10 @@ export default interface IConfig {
         nameResolver?: NameResolverFunction;
     },
     rtmp: {
-        port: number
+        port: number;
+        chunk_size: number;
+        ping: number;
+        ping_timeout: number;
+        gop_cache: boolean;
     }
 }
