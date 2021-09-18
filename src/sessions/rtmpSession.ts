@@ -84,6 +84,12 @@ const STREAM_DRY = 0x02;
 const STREAM_EMPTY = 0x1f;
 const STREAM_READY = 0x20;
 
+interface IBitrateCache {
+    intervalMs: number;
+    last_update: number;
+    bytes: number;
+}
+
 const RtmpPacket = {
     create: (fmt = 0, cid = 0) => {
         return {
@@ -110,6 +116,7 @@ export default class RtmpSession implements Session {
     id: any;
     ip: any;
     TAG: string;
+    bitrate: number;
     handshakePayload: Buffer;
     handshakeState: number;
     handshakeBytes: number;
@@ -163,6 +170,7 @@ export default class RtmpSession implements Session {
     publishArgs: any;
     players: Set<string> = new Set<string>();
     numPlayCache: number;
+    bitrateCache: IBitrateCache;
     isFirstAudioReceived: boolean;
     startTimestamp: number;
     objectEncoding: any;
@@ -216,6 +224,7 @@ export default class RtmpSession implements Session {
         this.videoHeight = 0;
         this.videoFps = 0;
         this.videoLevel = 0;
+        this.bitrate = 0;
 
         this.gopCacheEnable = config.rtmp.gop_cache;
         this.rtmpGopCacheQueue = null;
@@ -541,6 +550,15 @@ export default class RtmpSession implements Session {
             this.inLastAck = this.inAckSize;
             this.sendACK(this.inAckSize);
         }
+
+        this.bitrateCache.bytes += bytes;
+        let current_time = Date.now();
+        let diff = current_time - this.bitrateCache.last_update;
+        if (diff >= this.bitrateCache.intervalMs) {
+            this.bitrate = Math.round(this.bitrateCache.bytes * 8 / diff);
+            this.bitrateCache.bytes = 0;
+            this.bitrateCache.last_update = current_time;
+        }
     }
 
     rtmpPacketParse() {
@@ -673,10 +691,8 @@ export default class RtmpSession implements Session {
 
             if (sound_format != 10) {
                 Logger.log(
-                    `[rtmp publish] Handle audio. id=${this.id} streamPath=${
-                        this.publishStreamPath
-                    } sound_format=${sound_format} sound_type=${sound_type} sound_size=${sound_size} sound_rate=${sound_rate} codec_name=${this.audioCodecName} ${this.audioSamplerate} ${
-                        this.audioChannels
+                    `[rtmp publish] Handle audio. id=${this.id} streamPath=${this.publishStreamPath
+                    } sound_format=${sound_format} sound_type=${sound_type} sound_size=${sound_size} sound_rate=${sound_rate} codec_name=${this.audioCodecName} ${this.audioSamplerate} ${this.audioChannels
                     }ch`
                 );
             }
@@ -692,10 +708,8 @@ export default class RtmpSession implements Session {
             this.audioSamplerate = info.sample_rate;
             this.audioChannels = info.channels;
             Logger.log(
-                `[rtmp publish] Handle audio. id=${this.id} streamPath=${
-                    this.publishStreamPath
-                } sound_format=${sound_format} sound_type=${sound_type} sound_size=${sound_size} sound_rate=${sound_rate} codec_name=${this.audioCodecName} ${this.audioSamplerate} ${
-                    this.audioChannels
+                `[rtmp publish] Handle audio. id=${this.id} streamPath=${this.publishStreamPath
+                } sound_format=${sound_format} sound_type=${sound_type} sound_size=${sound_size} sound_rate=${sound_rate} codec_name=${this.audioCodecName} ${this.audioSamplerate} ${this.audioChannels
                 }ch`
             );
         }
@@ -772,8 +786,7 @@ export default class RtmpSession implements Session {
             this.videoCodec = codec_id;
             this.videoCodecName = VIDEO_CODEC_NAME[codec_id];
             Logger.log(
-                `[rtmp publish] Handle video. id=${this.id} streamPath=${this.publishStreamPath} frame_type=${frame_type} codec_id=${codec_id} codec_name=${this.videoCodecName} ${
-                    this.videoWidth
+                `[rtmp publish] Handle video. id=${this.id} streamPath=${this.publishStreamPath} frame_type=${frame_type} codec_id=${codec_id} codec_name=${this.videoCodecName} ${this.videoWidth
                 }x${this.videoHeight}`
             );
         }
@@ -1065,6 +1078,11 @@ export default class RtmpSession implements Session {
         this.setPeerBandwidth(5000000, 2);
         this.setChunkSize(this.outChunkSize);
         this.respondConnect(invokeMessage.transId);
+        this.bitrateCache = {
+            intervalMs: 1000,
+            last_update: this.startTimestamp,
+            bytes: 0,
+        };
         Logger.log(`[rtmp connect] id=${this.id} ip=${this.ip} app=${this.appname} args=${JSON.stringify(invokeMessage.cmdObj)}`);
         context.nodeEvent.emit("postConnect", this.id, invokeMessage.cmdObj);
     }
