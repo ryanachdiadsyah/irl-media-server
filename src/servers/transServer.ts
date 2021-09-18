@@ -67,6 +67,9 @@ export default class TransServer {
         let config = this.config;
 
         let conf: any = {
+            mp4: this.config.trans.mp4,
+            mp4Flags: this.config.trans.mp4Flags,
+
             hls: this.config.trans.hls,
             hlsFlags: this.config.trans.hlsFlags,
 
@@ -75,6 +78,7 @@ export default class TransServer {
         };
 
         this.getStreamName(key).then(streamName => {
+            if (!conf.mp4 && !conf.hls && !conf.dash) return;
             conf.mediaroot = config.paths.media_root;
             conf.rtmpPort = config.rtmp.port;
             conf.streamPath = streamPath;
