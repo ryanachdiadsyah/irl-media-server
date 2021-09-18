@@ -1,5 +1,5 @@
 {
-  "name": "distort-media-server",
+  "name": "@irlserver/irl-media-server",
   "version": "2.1.15",
   "description": "A fork of node-media-server",
   "main": "lib/index.js",
@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/distort-live/distort-media-server.git"
+    "url": "git+https://github.com/irlserver/irl-media-server.git"
   },
   "keywords": [
     "rtmp",
@@ -23,9 +23,9 @@
   "author": "Mingliang Chen",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/distort-live/distort-media-server/issues"
+    "url": "https://github.com/irlserver/irl-media-server/issues"
   },
-  "homepage": "https://distort.live/",
+  "homepage": "https://irlserver.com/",
   "dependencies": {
     "chalk": "^2.4.2",
     "dateformat": "^3.0.3",
