@@ -1,8 +1,14 @@
+import {IncomingMessage, ServerResponse} from "http";
 import * as url from "url";
 import * as context from "../core/context";
-import {Session} from "./session";
+import {Session, SessionTypeEnum} from "./session";
 
 const NodeCoreUtils = require("../core/utils");
+
+export enum ProtocolsEnum {
+    HTTP = 'http',
+    WS = 'ws',
+}
 
 interface IFlvSession {
     header: {
@@ -17,9 +23,6 @@ export default class FlvSession implements Session {
     id: string;
     ip: string;
 
-    req: any;
-    res: any;
-
     connectCmdObj: any;
 
     streamPath: string = "";
@@ -30,7 +33,13 @@ export default class FlvSession implements Session {
     isPlaying: boolean;
     isIdling: boolean;
 
-    constructor(req, res) {
+    public sessionType = SessionTypeEnum.CONNECTED;
+
+    constructor(
+        public readonly req: IncomingMessage,
+        public readonly res: ServerResponse,
+        public readonly protocol: ProtocolsEnum,
+      ) {
         this.req = req;
         this.res = res;
 
@@ -43,20 +52,23 @@ export default class FlvSession implements Session {
         this.isPlaying = false;
         this.isIdling = false;
 
-        if (this.req.nmsConnectionType === "ws") {
-            this.res.cork = this.res._socket.cork.bind(this.res._socket);
-            this.res.uncork = this.res._socket.uncork.bind(this.res._socket);
+        if (this.protocol === ProtocolsEnum.HTTP) {
+            this.res.cork = this.res.socket.cork.bind(this.res.socket);
+            this.res.uncork = this.res.socket.uncork.bind(this.res.socket);
             this.res.on("close", this.onReqClose.bind(this));
             this.res.on("error", this.onReqError.bind(this));
-            this.res.write = this.res.send;
-            this.res.end = this.res.close;
-        } else {
+            this.res.end = this.res['close'];
+        }
+
+        if (this.protocol === ProtocolsEnum.WS) {
             this.res.cork = this.res.socket.cork.bind(this.res.socket);
             this.res.uncork = this.res.socket.uncork.bind(this.res.socket);
             this.req.socket.on("close", this.onReqClose.bind(this));
             this.req.on("error", this.onReqError.bind(this));
+            this.res.end = this.res['close'];
         }
 
+        this.sessionType = SessionTypeEnum.ACCEPTED;
         context.sessions.set(this.id, this);
     }
 
@@ -132,9 +144,39 @@ export default class FlvSession implements Session {
         this.stop();
     }
 
+    public get stats() {
+        return {
+            bytesRead: this.req.socket.bytesRead,
+            bytesWritten: this.req.socket.bytesWritten,
+            remoteAddress: this.req.socket.remoteAddress,
+        };
+    }
+
+    public write(data: Buffer) {
+        switch (this.protocol) {
+            case ProtocolsEnum.HTTP: {
+                this.res.write(data);
+
+                break;
+            }
+            case ProtocolsEnum.WS: {
+                this.res['send'](data, null, () => {
+                    // ws requires a callback
+                });
+
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+    }
+
     onPlay() {
         context.nodeEvent.emit("prePlay", this.id, this.streamPath, this.playArgs);
         if (!this.isStarting) return;
+
+        this.sessionType = SessionTypeEnum.SUBSCRIBER;
 
         if (!context.publishers.has(this.streamPath)) {
             context.idlePlayers.add(this.id);

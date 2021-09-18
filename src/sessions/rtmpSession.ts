@@ -4,18 +4,21 @@
 //  Copyright (c) 2018 Nodemedia. All rights reserved.
 //
 
-import {Session} from "./session";
+import {Session, SessionTypeEnum} from "./session";
 
-const QueryString = require("querystring");
-const AV = require("../core/av");
-const {AUDIO_SOUND_RATE, AUDIO_CODEC_NAME, VIDEO_CODEC_NAME} = require("../core/av");
+import QueryString = require("querystring");
+import {AUDIO_SOUND_RATE, AUDIO_CODEC_NAME, VIDEO_CODEC_NAME, getAACProfileName, getAVCProfileName, readAACSpecificConfig, readAVCSpecificConfig} from "../core/av";
 
-const AMF = require("../core/amf");
-const Handshake = require("../servers/rtmpHandshake");
-const NodeCoreUtils = require("../core/utils");
-const FlvSession = require("./flvSession").default;
+import AMF = require("../core/amf");
+import Handshake = require("../servers/rtmpHandshake");
+import NodeCoreUtils = require("../core/utils");
+import FlvSession from "./flvSession";
 import * as context from "../core/context";
 import Logger from "../core/logger";
+import IConfig from "../config";
+import EventEmitter = require("events");
+import {Socket} from "net";
+import TransSession from "./transSession";
 
 const N_CHUNK_STREAM = 8;
 const RTMP_VERSION = 3;
@@ -85,9 +88,9 @@ const STREAM_EMPTY = 0x1f;
 const STREAM_READY = 0x20;
 
 interface IBitrateCache {
-    intervalMs: number;
-    last_update: number;
-    bytes: number;
+    intervalMs?: number;
+    last_update?: number;
+    bytes?: number;
 }
 
 const RtmpPacket = {
@@ -109,9 +112,7 @@ const RtmpPacket = {
     }
 };
 
-export default class RtmpSession implements Session {
-    config: any;
-    socket: any;
+export default class RtmpSession {
     res: any;
     id: any;
     ip: any;
@@ -175,8 +176,12 @@ export default class RtmpSession implements Session {
     startTimestamp: number;
     objectEncoding: any;
     connectTime: Date;
+    public sessionType = SessionTypeEnum.CONNECTED;
 
-    constructor(config, socket) {
+    constructor(
+        private readonly config: IConfig,
+        private readonly socket: Socket,
+      ) {
         this.config = config;
         this.socket = socket;
         this.res = socket;
@@ -246,6 +251,7 @@ export default class RtmpSession implements Session {
         this.publishArgs = {};
 
         this.numPlayCache = 0;
+        this.bitrateCache = {};
         context.sessions.set(this.id, this);
     }
 
@@ -311,6 +317,14 @@ export default class RtmpSession implements Session {
     onSocketTimeout() {
         // Logger.log('onSocketTimeout');
         this.stop();
+    }
+
+    public get stats() {
+        return {
+            bytesRead: this.socket.bytesRead,
+            bytesWritten: this.socket.bytesWritten,
+            remoteAddress: this.socket.remoteAddress,
+        };
     }
 
     onSocketData(data) {
@@ -703,8 +717,8 @@ export default class RtmpSession implements Session {
             this.isFirstAudioReceived = true;
             this.aacSequenceHeader = Buffer.alloc(payload.length);
             payload.copy(this.aacSequenceHeader);
-            let info = AV.readAACSpecificConfig(this.aacSequenceHeader);
-            this.audioProfileName = AV.getAACProfileName(info);
+            let info = readAACSpecificConfig(this.aacSequenceHeader);
+            this.audioProfileName = getAACProfileName(info);
             this.audioSamplerate = info.sample_rate;
             this.audioChannels = info.channels;
             Logger.log(
@@ -771,10 +785,10 @@ export default class RtmpSession implements Session {
             if (frame_type == 1 && payload[1] == 0) {
                 this.avcSequenceHeader = Buffer.alloc(payload.length);
                 payload.copy(this.avcSequenceHeader);
-                let info = AV.readAVCSpecificConfig(this.avcSequenceHeader);
+                let info = readAVCSpecificConfig(this.avcSequenceHeader);
                 this.videoWidth = info.width;
                 this.videoHeight = info.height;
-                this.videoProfileName = AV.getAVCProfileName(info);
+                this.videoProfileName = getAVCProfileName(info);
                 this.videoLevel = info.level;
                 this.rtmpGopCacheQueue = this.gopCacheEnable ? new Set() : null;
                 this.flvGopCacheQueue = this.gopCacheEnable ? new Set() : null;
@@ -846,7 +860,7 @@ export default class RtmpSession implements Session {
     rtmpDataHandler() {
         let offset = this.parserPacket.header.type === RTMP_TYPE_FLEX_STREAM ? 1 : 0;
         let payload = this.parserPacket.payload.slice(offset, this.parserPacket.header.length);
-        let dataMessage = AMF.decodeAmf0Data(payload);
+        let dataMessage: any = AMF.decodeAmf0Data(payload);
         switch (dataMessage.cmd) {
             case "@setDataFrame":
                 if (dataMessage.dataObj) {
@@ -892,7 +906,7 @@ export default class RtmpSession implements Session {
     rtmpInvokeHandler() {
         let offset = this.parserPacket.header.type === RTMP_TYPE_FLEX_MESSAGE ? 1 : 0;
         let payload = this.parserPacket.payload.slice(offset, this.parserPacket.header.length);
-        let invokeMessage = AMF.decodeAmf0Cmd(payload);
+        let invokeMessage: any = AMF.decodeAmf0Cmd(payload);
         // Logger.log(invokeMessage);
         switch (invokeMessage.cmd) {
             case "connect":
@@ -1066,6 +1080,7 @@ export default class RtmpSession implements Session {
         if (!this.isStarting) {
             return;
         }
+        this.sessionType = SessionTypeEnum.ACCEPTED;
         this.connectCmdObj = invokeMessage.cmdObj;
         this.appname = invokeMessage.cmdObj.app;
         this.objectEncoding = invokeMessage.cmdObj.objectEncoding != null ? invokeMessage.cmdObj.objectEncoding : 0;
@@ -1113,6 +1128,8 @@ export default class RtmpSession implements Session {
             }
         }
 
+        this.sessionType = SessionTypeEnum.PUBLISHER;
+
         if (context.publishers.has(this.publishStreamPath)) {
             Logger.log(`[rtmp publish] Already has a stream. id=${this.id} streamPath=${this.publishStreamPath} streamId=${this.publishStreamId}`);
             this.sendStatusMessage(this.publishStreamId, "error", "NetStream.Publish.BadName", "Stream already publishing");
@@ -1159,6 +1176,8 @@ export default class RtmpSession implements Session {
                 return;
             }
         }
+
+        this.sessionType = SessionTypeEnum.SUBSCRIBER;
 
         if (this.isPlaying) {
             Logger.log(`[rtmp play] NetConnection is playing. id=${this.id} streamPath=${this.playStreamPath}  streamId=${this.playStreamId} `);
