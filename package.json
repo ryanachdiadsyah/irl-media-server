@@ -1,6 +1,6 @@
 {
   "name": "@irlserver/media-server",
-  "version": "2.1.19",
+  "version": "2.1.20",
   "description": "A fork of node-media-server",
   "main": "lib/index.js",
   "scripts": {
