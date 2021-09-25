@@ -1,5 +1,5 @@
 {
-  "name": "@irlserver/irl-media-server",
+  "name": "@irlserver/media-server",
   "version": "2.1.15",
   "description": "A fork of node-media-server",
   "main": "lib/index.js",
