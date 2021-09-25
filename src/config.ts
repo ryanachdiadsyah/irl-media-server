@@ -12,7 +12,10 @@ export default interface IConfig {
     auth: {
         publish: boolean;
         play: boolean;
-    }
+    },
+    api?: {
+        token?: string
+    },
     logType: LogType,
     cluster: boolean,
     paths: {
