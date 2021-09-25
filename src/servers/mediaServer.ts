@@ -71,4 +71,8 @@ export default class MediaServer {
         if (this.nhs) this.nhs.stop();
         if (this.nls) this.nls.stop();
     }
+
+    getSession(id: string) {
+        return Context.sessions.get(id);
+    }
 }
