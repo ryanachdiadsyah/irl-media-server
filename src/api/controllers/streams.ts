@@ -10,7 +10,6 @@ export function getStreams(req: Request, res: Response) {
   const stats = [];
 
   for (const [, session] of this.sessions) {
-    console.log(this);
     if (!session.isStarting) {
       continue;
     }
