@@ -4,7 +4,9 @@ import {SessionTypeEnum} from '../../sessions/session';
 import FlvSession from '../../sessions/flvSession';
 import RtmpSession from '../../sessions/rtmpSession';
 
-export function getStreams(req, res, next) {
+import {Request, Response} from 'express';
+
+export function getStreams(req: Request, res: Response) {
   const stats = [];
 
   for (const [, session] of this.sessions) {
